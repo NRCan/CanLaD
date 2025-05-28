@@ -1,0 +1,16 @@
+#train config
+output : /Results/
+lenghwind : 10
+version : 1
+num_test : s0
+learning_rate : 0.001
+num_epochs : 50
+batch_size : 64
+name : TempCNN
+columns  : ['b1', 'b2', 'b3', 'b4', 'b5', 'b6']
+nbclass : 21
+note : v1
+weight_decay: 1.0e-5
+
+
+
