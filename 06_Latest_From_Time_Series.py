@@ -10,7 +10,7 @@ from rasterio.mask import mask
 my_wkt="""PROJCRS["NAD_1983_Canada_Lambert",BASEGEOGCRS["NAD83",DATUM["North American Datum 1983", ELLIPSOID["GRS 1980",6378137,298.257222101004, LENGTHUNIT["metre",1]],ID["EPSG",6269]],PRIMEM["Greenwich",0,ANGLEUNIT["Degree",0.0174532925199433]]],CONVERSION["unnamed", METHOD["Lambert Conic Conformal (2SP)", ID["EPSG",9802]],PARAMETER["Latitude of false origin",0,ANGLEUNIT["Degree",0.0174532925199433],ID["EPSG",8821]], PARAMETER["Longitude of false origin",-95,ANGLEUNIT["Degree",0.0174532925199433], ID["EPSG",8822]], PARAMETER["Latitude of 1st standard parallel",49, ANGLEUNIT["Degree",0.0174532925199433],ID["EPSG",8823]],PARAMETER["Latitude of 2nd standard parallel",77,ANGLEUNIT["Degree",0.0174532925199433],ID["EPSG",8824]],PARAMETER["Easting at false origin",0,LENGTHUNIT["metre",1],ID["EPSG",8826]],PARAMETER["Northing at false origin",0,LENGTHUNIT["metre",1], ID["EPSG",8827]]],CS[Cartesian,2],AXIS["(E)",east,ORDER[1], LENGTHUNIT["metre",1,ID["EPSG",9001]]],AXIS["(N)",north,ORDER[2],LENGTHUNIT["metre",1,ID["EPSG",9001]]]]"""
 dst_crs = CRS.from_wkt(my_wkt)
 
-def find_last_events(data, start_year=1984):
+def find_last_events(data, start_year=1985):
     """
     Find the last valid event and its first occurrence year for each pixel in a 3D array.
 
@@ -31,7 +31,7 @@ def find_last_events(data, start_year=1984):
     """
 
     # Create mask for valid values (not 99 or 100)
-    valid_mask = (data != 99) & (data != 100)
+    valid_mask = (data != 99) & (data != 100) & (data != 0)
 
     # Initialize event IDs for each time step
     event_ids = np.zeros_like(data, dtype=int)
@@ -64,8 +64,10 @@ def find_last_events(data, start_year=1984):
     # Create mask for the last event period
     last_event_mask = (event_ids == last_event_id)
 
-    # Initialize array for first year of last event
+    # Initialize array for first year and last year of last event
     first_year_last_event = np.full(data.shape[1:], np.nan)
+    last_year_last_event = np.full(data.shape[1:], np.nan)
+
     years = np.arange(start_year, start_year + data.shape[0])
 
     # Find the first year of the last event for each pixel
@@ -75,7 +77,15 @@ def find_last_events(data, start_year=1984):
         update_mask = last_event_cells & np.isnan(first_year_last_event)
         first_year_last_event[update_mask] = years[t]
 
-    return last_event_type, first_year_last_event
+        # Update last year for cells with last event
+        last_year_last_event[last_event_cells] = years[t]
+        lastyear = years[-1]
+        last_year_last_event = np.where((last_year_last_event == lastyear) & (first_year_last_event != lastyear),
+                                        np.nan,
+                                        last_year_last_event)
+
+
+    return last_event_type, first_year_last_event, last_year_last_event
 
 
 # Example usage:
@@ -91,7 +101,7 @@ if __name__ == "__main__":
     tif_files = sorted([os.path.join(path_, f) for f in os.listdir(path_) if f.endswith('.tif')])
     print(tif_files)
 
-    outputpath = path_ + '/mosaicv46mask/'
+    outputpath = path_ + '/Clean_latest/'
     os.makedirs(outputpath, exist_ok=True)
 
     # Open and process rasters within the spatial bounds
@@ -119,11 +129,12 @@ if __name__ == "__main__":
 
 
 
-    last_types, first_years = find_last_events(data, start_year=1984)
+    last_types, first_years, last_years = find_last_events(data, start_year=1984)
 
 
     outputlastyear = outputpath + str(index) + f"output_top_year.tif"
     outputlastType = outputpath + str(index) + f"output_top_type.tif"
+    outputlastyeart2 = outputpath + str(index) + f"output_top_yearT2.tif"
 
 
     meta = src.meta.copy()
@@ -141,3 +152,6 @@ if __name__ == "__main__":
 
     with rasterio.open(outputlastType, 'w', **meta) as dst:
         dst.write(last_types , 1)
+
+    with rasterio.open(outputlastyeart2, 'w', **meta) as dst:
+        dst.write(last_years, 1)

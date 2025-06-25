@@ -101,21 +101,113 @@ def transform_to_time_series(exyear, extype, start_year=1984, end_year=2024):
 
     exyear, extype = reorder_reg_values(exyear, extype)
 
-    for i in range(len(exyear)):
-        start = exyear[i]
-        end = exyear[i + 1] if i + 1 < len(exyear) else None
-        value = extype[i] if i < len(extype) else None
+    for i in range(0, len(exyear), 1):  # Iterate
 
+        start = exyear[i]
+        end = exyear[i + 1] if i + 1 < len(exyear) else 0
+        value = extype[i] if i < len(extype) else 0
+        valid_condition = ((start != 0) & (end != 0) &
+                           (start != 99) & (start != 100) &
+                           (end != 99) & (end != 100))
+
+        # Calculate duration: dur = start - end + 1 if valid, else 0
+        dur = np.where(valid_condition, end - start + 1, 0)
+        dur = 9 if dur == 10 else dur
+
+        # condition to assign the disturbance year based on the end of segment for fire and harvesting
+        if value in [1, 14] and dur >= 3:
+            start = end
+
+
+
+        # Skip invalid or missing data
         if start == 99 or start < start_year or value is None or np.isnan(value):
             continue
-
+        # Skip invalid or missing data
         if end == -32768.0:
             continue
+        # Skip invalid or missing data
+        if start != 99 and value == 100 and (start < exyear[i - 1] or start < exyear[i - 2]):
+            continue
 
-        # Assign values to time series
-        start_idx = int(max(start - start_year, 0))
-        end_idx = int(end_year - start_year + 1)
+
+
+        # Verify value and year of earlier index, if nothing before=> continue
+        if start != 99:
+            all_earlier_start_are_99 = False
+        if value != 99:
+            all_earlier_value_are_99 = False
+        if start != 99 and value == 100 and all_earlier_value_are_99:
+            continue
+        if start != 99 and value == 100 and all_earlier_start_are_99:
+            continue
+
+        # Conditionally adjust start_idx to select date of the end of the disturbance and dill it with 100 after
+        if value == 100:
+                       start_idx = int(max(start - start_year + 1, 0))  # Incremented start index
+        else:
+            start_idx = int(max(start - start_year, 0))  # Default start index
+
+            # Apply conditions based on the type of classes (value)
+        if value in [0, 3, 6, 8, 9, 12, 13, 7, 11]:  # Forest, NoForest, Agri, Urban, Water, Rock, Recovery class are== nochange:
+            value = 99  # Change to 99
+        elif value in [14]:  # change pest_fire to fire
+            value = 1  # Ignore `type=100` for these values
+        elif value in [1, 2, 5, 10]:  # Fire, harvesting,  windthrow, ad dam only 1 years:
+            extype[i + 1] = 100
+        if value in [1, 2, 5, 10]:  # Fire, harvesting,  windthrow, ad dam only 1 years:
+            end_idx = int(start + 1 - start_year)
+
+
+        else:
+            # Assign values to the time series
+            # end_idx = int(min((end - start_year + 1) if end and end != 99 else num_years, num_years))
+            end_idx = int(end_year - start_year + 1)
+
+        #Reclass the type code
+        reclass_map = {99: 99, 100: 100, 1: 1, 2: 2, 4: 99, 5: 3, 10: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 8}
+        if value in reclass_map:
+            value = reclass_map[value]
+
+
+        # Calculate duration for value transformation (but not for 99 or 100)
+        if value not in [99, 100]:
+            value = value * 10 + dur
+
+
         time_series[start_idx:end_idx] = value
+
+        # if the same value appears twice separated by less than 5 years,
+        #     change the first occurrence to 100.
+    modified = time_series.copy()
+    gap_threshold = 5
+
+    # Iterate through the array
+    for i in range(len(time_series)):
+        current_value = time_series[i]
+
+        # Skip if current value is 99 or 100 (assuming these are special values)
+        if current_value in [99, 100]:
+            continue
+
+        first_digit = int(str(int(current_value))[0]) if current_value != 0 else 0
+        if first_digit not in [1, 2, 3, 4]:
+            continue
+
+        # Look for the same value in the next gap_threshold positions
+        for j in range(i + 1, min(i + gap_threshold + 1, len(time_series))):
+            if time_series[j] in [99, 100]:
+                continue
+
+            current_digit = int(str(int(time_series[j]))[0])
+            check_digit = int(str(int(current_value))[0])
+
+            if current_digit == check_digit:
+
+                # Found same value within gap_threshold, change first occurrence to 100
+                modified[i] = 99
+                break
+
 
     return time_series
 
@@ -161,12 +253,14 @@ with rasterio.open(FINALTypeLIST[0], "r+") as src:
             year_values = year_data[:, row, col]
             type_values = type_data[:, row, col]
 
+            # StartIndice need +1 (If from LTD)
+            indices = [0, 2, 4, 6, 8]
+            year_values[indices] += 1
+
             result1d = transform_to_time_series(year_values, type_values)
 
-            reclass_map = {99: 99, 100: 100, 1: 1, 2: 2, 4: 0, 5: 3, 10: 4, 15: 5, 16: 6, 17: 7, 18: 8, 19: 8}
-            result1d_reclass = np.vectorize(lambda x: reclass_map.get(x, x))(result1d)
 
-            time_series[:, row, col] = result1d_reclass
+            time_series[:, row, col] = result1d
 
     for i in range(total_years):
         output_filename = f"{dirout}timeserie_{start_year + i}.tif"

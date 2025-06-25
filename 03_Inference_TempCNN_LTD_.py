@@ -155,7 +155,7 @@ def adjust_reference_year(year_disturbance, mag, min_year=1985, max_year=2024, r
 
     Parameters:
     - year_disturbance: a disturbance year.
-    - min_year: The minimum year allowed (default is 1986).
+    - min_year: The minimum year allowed (default is 1985).
     - max_year: The maximum year allowed (default is 2024).
     - required_years: The number of years required (default is 10).
 
@@ -172,6 +172,9 @@ def adjust_reference_year(year_disturbance, mag, min_year=1985, max_year=2024, r
         adjusted_year = year_disturbance - 1
     elif 2017 <= year_disturbance <= max_year:
         adjusted_year = max_year - required_years + 1
+    elif year_disturbance == 1984:
+        adjusted_year = year_disturbance
+
     else:
         adjusted_year = year_disturbance
 
